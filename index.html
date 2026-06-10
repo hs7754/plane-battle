@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- 微信内置浏览器 / 腾讯 X5 内核优化 -->
+  <meta name="format-detection" content="telephone=no,email=no,address=no">
+  <meta name="screen-orientation" content="portrait">
+  <meta name="x5-orientation" content="portrait">
+  <meta name="full-screen" content="yes">
+  <meta name="x5-fullscreen" content="true">
+  <meta name="browsermode" content="application">
+  <meta name="x5-page-mode" content="app">
   <title>&#39134;&#26426;&#22823;&#25112;</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -29,6 +37,7 @@
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
+      -webkit-touch-callout: none;
       -webkit-text-size-adjust: 100%;
       color: #f7fbff;
       background:
@@ -66,6 +75,7 @@
       touch-action: none;
       -webkit-user-select: none;
       user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .hud {
@@ -194,6 +204,7 @@
       box-shadow: none;
       touch-action: none;
       user-select: none;
+      -webkit-touch-callout: none;
     }
 
     .touch[data-key="ArrowUp"] {
@@ -215,12 +226,17 @@
       grid-row: 3;
     }
 
+    .mobile .touch {
+      pointer-events: auto;
+    }
+
     .fire {
       width: 74px;
       height: 74px;
       border-radius: 50%;
       color: #1b0d05;
       background: #ffd166;
+      pointer-events: auto;
     }
 
     @media (hover: none), (max-width: 700px) {
@@ -306,7 +322,7 @@
           <h1 id="title">&#39134;&#26426;&#22823;&#25112;</h1>
           <p id="message">&#20987;&#33853;&#25932;&#26426;&#65292;&#36530;&#24320;&#25758;&#20987;&#65292;&#22362;&#25345;&#36234;&#20037;&#20998;&#25968;&#36234;&#39640;&#12290;</p>
           <button id="start">&#24320;&#22987;&#28216;&#25103;</button>
-          <p>&#25805;&#20316;&#65306;WASD / &#26041;&#21521;&#38190;&#65292;&#31354;&#26684;&#23556;&#20987;&#65292;P &#26242;&#20572;&#12290;</p>
+          <p>&#30005;&#33041;&#65306;WASD / &#26041;&#21521;&#38190;&#31227;&#21160;&#65292;&#31354;&#26684;&#23556;&#20987;&#12290;<br>&#25163;&#26426;&#65306;&#25302;&#21160;&#23631;&#24149;&#25511;&#21046;&#39134;&#26426;&#65292;&#28857;&#20987;&#24320;&#28779;&#23556;&#20987;&#12290;</p>
         </div>
       </div>
     </section>
@@ -350,6 +366,11 @@
       lastEnemy: 0,
       shake: 0,
       damageFlash: 0
+    };
+
+    const drag = {
+      active: false,
+      pointerId: null
     };
 
     function resize() {
@@ -515,6 +536,14 @@
       } else {
         overlay.hidden = true;
       }
+    }
+
+    function movePlayerToClient(clientX, clientY) {
+      if (!game.running || game.paused) return;
+      const rect = canvas.getBoundingClientRect();
+      const fingerOffset = 54; // 飞机略微显示在手指上方，避免手指挡住机体。
+      player.x = clamp(clientX - rect.left, player.w / 2 + 8, canvas.w - player.w / 2 - 8);
+      player.y = clamp(clientY - rect.top - fingerOffset, player.h / 2 + 54, canvas.h - player.h / 2 - 12);
     }
 
     function update(dt) {
@@ -828,9 +857,10 @@
       const key = button.dataset.key;
 
       function press(event) {
-        event.preventDefault();
+        if (event) event.preventDefault();
         keys.add(key);
-        if (event.pointerId !== undefined && button.setPointerCapture) {
+        if (key === "Space") shoot(); // 修复手机快速点击时下一帧还没来就松手，导致没有开火的问题。
+        if (event && event.pointerId !== undefined && button.setPointerCapture) {
           button.setPointerCapture(event.pointerId);
         }
       }
@@ -840,20 +870,69 @@
         keys.delete(key);
       }
 
-      if (window.PointerEvent) {
-        button.addEventListener("pointerdown", press);
-        button.addEventListener("pointerup", release);
-        button.addEventListener("pointercancel", release);
-        button.addEventListener("pointerleave", release);
-      } else {
-        button.addEventListener("touchstart", press, { passive: false });
-        button.addEventListener("touchend", release, { passive: false });
-        button.addEventListener("touchcancel", release, { passive: false });
-        button.addEventListener("mousedown", press);
-        button.addEventListener("mouseup", release);
-        button.addEventListener("mouseleave", release);
-      }
+      button.addEventListener("pointerdown", press);
+      button.addEventListener("pointerup", release);
+      button.addEventListener("pointercancel", release);
+      button.addEventListener("pointerleave", release);
+      button.addEventListener("touchstart", press, { passive: false });
+      button.addEventListener("touchend", release, { passive: false });
+      button.addEventListener("touchcancel", release, { passive: false });
+      button.addEventListener("mousedown", press);
+      button.addEventListener("mouseup", release);
+      button.addEventListener("mouseleave", release);
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        if (key === "Space") shoot();
+      });
     });
+
+    function startDrag(event) {
+      if (event.target.closest(".mobile") || event.target.closest(".overlay")) return;
+      if (!game.running || game.paused) return;
+      event.preventDefault();
+      drag.active = true;
+      drag.pointerId = event.pointerId === undefined ? null : event.pointerId;
+      movePlayerToClient(event.clientX, event.clientY);
+      if (event.pointerId !== undefined && canvas.setPointerCapture) {
+        canvas.setPointerCapture(event.pointerId);
+      }
+    }
+
+    function moveDrag(event) {
+      if (!drag.active) return;
+      if (drag.pointerId !== null && event.pointerId !== drag.pointerId) return;
+      event.preventDefault();
+      movePlayerToClient(event.clientX, event.clientY);
+    }
+
+    function endDrag(event) {
+      if (event) event.preventDefault();
+      drag.active = false;
+      drag.pointerId = null;
+    }
+
+    canvas.addEventListener("pointerdown", startDrag);
+    canvas.addEventListener("pointermove", moveDrag);
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+
+    canvas.addEventListener("touchstart", function (event) {
+      if (!game.running || game.paused) return;
+      event.preventDefault();
+      drag.active = true;
+      const t = event.touches[0];
+      if (t) movePlayerToClient(t.clientX, t.clientY);
+    }, { passive: false });
+
+    canvas.addEventListener("touchmove", function (event) {
+      if (!drag.active) return;
+      event.preventDefault();
+      const t = event.touches[0];
+      if (t) movePlayerToClient(t.clientX, t.clientY);
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", endDrag, { passive: false });
+    canvas.addEventListener("touchcancel", endDrag, { passive: false });
 
     setAppHeight();
     resize();
